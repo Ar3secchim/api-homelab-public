@@ -1,0 +1,33 @@
+bin/
+coverage.out
+
+# Private planning and operational material.
+docs/task/
+docs/private/
+k8s/overlays/private/
+
+# Local credentials and environment overrides.
+.env
+.env.*
+!.env.example
+.envrc
+.dev.vars
+.secrets/
+secrets/
+credentials/
+*.pem
+*.key
+*.p12
+*.pfx
+kubeconfig
+kubeconfig.*
+*.local.yaml
+*.local.yml
+*.local.json
+values.private.yaml
+values.private.yml
+
+# Tool state that may contain account or backend data.
+.terraform/
+*.tfstate
+*.tfstate.*

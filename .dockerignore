@@ -1,0 +1,8 @@
+# Allowlist the build context so future local files and credentials are never
+# sent to the Docker daemon.
+**
+!go.mod
+!cmd/
+!cmd/**
+!internal/
+!internal/**
