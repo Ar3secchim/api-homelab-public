@@ -12,9 +12,9 @@ foi antecipado.
 
 ## Decisão
 
-O produtor monta um objeto novo, campo a campo. Apenas contagens, timestamps e
-uma lista fixa de serviços podem entrar no contrato. Depois da montagem, o JSON
-completo é validado novamente antes do upload.
+O produtor monta um objeto novo, campo a campo. Apenas contagens, estados
+agregados, timestamps e uma lista fixa de serviços podem entrar no contrato.
+Depois da montagem, o JSON completo é validado novamente antes do upload.
 
 A ServiceAccount pode executar somente `get` e `list` sobre:
 
@@ -22,8 +22,9 @@ A ServiceAccount pode executar somente `get` e `list` sobre:
 - Applications do Argo CD;
 - Certificates do cert-manager.
 
-Não há curinga e não existe acesso a Secrets ou ConfigMaps. O total de workloads
-é inferido dos controladores dos Pods para não ampliar essas permissões.
+Não há curinga e não existe acesso a Secrets ou ConfigMaps. O total de
+workloads, sua distribuição por tipo e a quantidade de nós observados são
+inferidos dos Pods para não ampliar essas permissões.
 
 ## Consequências
 
@@ -32,4 +33,3 @@ Não há curinga e não existe acesso a Secrets ou ConfigMaps. O total de worklo
 - mesmo um bug no serializador não consegue ler Secrets com essa identidade;
 - o indicador de workloads representa controladores observados, e não todos os
   objetos declarados que estejam sem Pods.
-

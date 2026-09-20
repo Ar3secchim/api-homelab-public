@@ -13,6 +13,9 @@ func TestBuildPublishesOnlyThePublicContract(t *testing.T) {
 	applications := []map[string]any{
 		{
 			"metadata": map[string]any{"name": "private-application-name"},
+			"spec": map[string]any{
+				"syncPolicy": map[string]any{"automated": map[string]any{}},
+			},
 			"status": map[string]any{
 				"sync":           map[string]any{"status": "Synced"},
 				"health":         map[string]any{"status": "Healthy"},
@@ -44,7 +47,13 @@ func TestBuildPublishesOnlyThePublicContract(t *testing.T) {
 					},
 				},
 			},
-			"status": map[string]any{"phase": "Running"},
+			"spec": map[string]any{"nodeName": "private-node-name"},
+			"status": map[string]any{
+				"phase": "Running",
+				"conditions": []any{
+					map[string]any{"type": "Ready", "status": "True"},
+				},
+			},
 		},
 		{
 			"metadata": map[string]any{
@@ -65,7 +74,12 @@ func TestBuildPublishesOnlyThePublicContract(t *testing.T) {
 	certificates := []map[string]any{
 		{
 			"metadata": map[string]any{"name": "private-certificate"},
-			"status":   map[string]any{"renewalTime": "2026-10-20T14:00:00Z"},
+			"status": map[string]any{
+				"renewalTime": "2026-10-20T14:00:00Z",
+				"conditions": []any{
+					map[string]any{"type": "Ready", "status": "True"},
+				},
+			},
 		},
 	}
 
@@ -79,14 +93,44 @@ func TestBuildPublishesOnlyThePublicContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build returned an error: %v", err)
 	}
-	if document.GitOps.Applications != 2 || document.GitOps.Synced != 1 || document.GitOps.Healthy != 1 {
+	if document.SchemaVersion != 2 {
+		t.Errorf("schemaVersion = %d, want 2", document.SchemaVersion)
+	}
+	if document.ValidUntil != "2026-09-20T17:00:00Z" {
+		t.Errorf("validUntil = %q", document.ValidUntil)
+	}
+	if document.Status != "attention" {
+		t.Errorf("status = %q, want attention", document.Status)
+	}
+	if document.GitOps.Applications != 2 ||
+		document.GitOps.Synced != 1 ||
+		document.GitOps.OutOfSync != 1 ||
+		document.GitOps.Healthy != 1 ||
+		document.GitOps.Degraded != 1 ||
+		document.GitOps.AutoSyncEnabled != 1 {
 		t.Errorf("unexpected GitOps counts: %+v", document.GitOps)
 	}
 	if document.GitOps.LastSyncAt == nil || *document.GitOps.LastSyncAt != "2026-09-20T13:56:00Z" {
 		t.Errorf("unexpected last sync: %v", document.GitOps.LastSyncAt)
 	}
-	if document.Scale != (Scale{Namespaces: 1, Workloads: 1, PodsRunning: 1}) {
+	expectedScale := Scale{
+		Namespaces:      1,
+		NodesObserved:   1,
+		Workloads:       1,
+		WorkloadsByKind: WorkloadKinds{Deployments: 1},
+		PodsRunning:     1,
+		Pods: PodSummary{
+			Total:   2,
+			Running: 1,
+			Ready:   1,
+			Pending: 1,
+		},
+	}
+	if document.Scale != expectedScale {
 		t.Errorf("unexpected scale: %+v", document.Scale)
+	}
+	if document.TLS.Ready != 1 || document.TLS.NotReady != 0 || document.TLS.ExpiringWithin30Days != 1 {
+		t.Errorf("unexpected TLS counts: %+v", document.TLS)
 	}
 	if document.TLS.DaysToNextRenewal == nil || *document.TLS.DaysToNextRenewal != 30 {
 		t.Errorf("unexpected renewal interval: %v", document.TLS.DaysToNextRenewal)
@@ -103,7 +147,16 @@ func TestBuildPublishesOnlyThePublicContract(t *testing.T) {
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		t.Fatalf("encoded snapshot is not valid JSON: %v", err)
 	}
-	wantKeys := []string{"generatedAt", "gitops", "scale", "tls", "services"}
+	wantKeys := []string{
+		"schemaVersion",
+		"generatedAt",
+		"validUntil",
+		"status",
+		"gitops",
+		"scale",
+		"tls",
+		"services",
+	}
 	for _, key := range wantKeys {
 		if _, found := decoded[key]; !found {
 			t.Errorf("encoded snapshot is missing %q", key)

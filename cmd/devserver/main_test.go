@@ -26,12 +26,18 @@ func TestSnapshotEndpointServesSafeSample(t *testing.T) {
 		t.Error("local response should not be cached")
 	}
 	var document struct {
-		GeneratedAt string `json:"generatedAt"`
-		GitOps      struct {
+		SchemaVersion int    `json:"schemaVersion"`
+		GeneratedAt   string `json:"generatedAt"`
+		ValidUntil    string `json:"validUntil"`
+		Status        string `json:"status"`
+		GitOps        struct {
 			Applications int `json:"applications"`
 		} `json:"gitops"`
 		Scale struct {
 			PodsRunning int `json:"podsRunning"`
+			Pods        struct {
+				Ready int `json:"ready"`
+			} `json:"pods"`
 		} `json:"scale"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &document); err != nil {
@@ -40,8 +46,16 @@ func TestSnapshotEndpointServesSafeSample(t *testing.T) {
 	if document.GeneratedAt != "2026-09-20T14:00:00Z" {
 		t.Errorf("generatedAt = %q", document.GeneratedAt)
 	}
+	if document.SchemaVersion != 2 ||
+		document.ValidUntil != "2026-09-20T17:00:00Z" ||
+		document.Status != "attention" {
+		t.Errorf("unexpected v2 metadata: %+v", document)
+	}
 	if document.GitOps.Applications != 8 || document.Scale.PodsRunning != 24 {
 		t.Errorf("unexpected sample document: %+v", document)
+	}
+	if document.Scale.Pods.Ready != 23 {
+		t.Errorf("ready pods = %d, want 23", document.Scale.Pods.Ready)
 	}
 }
 

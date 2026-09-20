@@ -117,24 +117,49 @@ func setCORSHeaders(response http.ResponseWriter, corsOrigin string) {
 }
 
 func sampleSnapshot(now time.Time) ([]byte, error) {
+	now = now.Truncate(time.Second)
 	lastSync := now.Add(-5 * time.Minute).Format(time.RFC3339)
 	daysToRenewal := 45
 	document := snapshot.Document{
-		GeneratedAt: now.Truncate(time.Second).Format(time.RFC3339),
+		SchemaVersion: 2,
+		GeneratedAt:   now.Format(time.RFC3339),
+		ValidUntil:    now.Add(3 * time.Hour).Format(time.RFC3339),
+		Status:        "attention",
 		GitOps: snapshot.GitOps{
-			Applications: 8,
-			Synced:       7,
-			Healthy:      8,
-			LastSyncAt:   &lastSync,
+			Applications:    8,
+			Synced:          7,
+			OutOfSync:       1,
+			Healthy:         8,
+			Degraded:        0,
+			AutoSyncEnabled: 7,
+			LastSyncAt:      &lastSync,
 		},
 		Scale: snapshot.Scale{
-			Namespaces:  5,
-			Workloads:   18,
+			Namespaces:    5,
+			NodesObserved: 1,
+			Workloads:     18,
+			WorkloadsByKind: snapshot.WorkloadKinds{
+				Deployments:  12,
+				StatefulSets: 3,
+				DaemonSets:   2,
+				Other:        1,
+			},
 			PodsRunning: 24,
+			Pods: snapshot.PodSummary{
+				Total:     25,
+				Running:   24,
+				Ready:     23,
+				Pending:   1,
+				Succeeded: 0,
+				Failed:    0,
+			},
 		},
 		TLS: snapshot.TLS{
-			Certificates:      6,
-			DaysToNextRenewal: &daysToRenewal,
+			Certificates:         6,
+			Ready:                6,
+			NotReady:             0,
+			ExpiringWithin30Days: 0,
+			DaysToNextRenewal:    &daysToRenewal,
 		},
 		Services: []string{"ArgoCD", "Traefik", "cert-manager", "Infisical"},
 	}

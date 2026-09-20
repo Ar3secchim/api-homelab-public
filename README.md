@@ -17,30 +17,59 @@ O documento tem um contrato fechado:
 
 ```json
 {
+  "schemaVersion": 2,
   "generatedAt": "2026-09-20T14:00:00Z",
+  "validUntil": "2026-09-20T17:00:00Z",
+  "status": "healthy",
   "gitops": {
-    "applications": 0,
-    "synced": 0,
-    "healthy": 0,
-    "lastSyncAt": null
+    "applications": 15,
+    "synced": 15,
+    "outOfSync": 0,
+    "healthy": 15,
+    "degraded": 0,
+    "autoSyncEnabled": 15,
+    "lastSyncAt": "2026-09-20T13:56:00Z"
   },
   "scale": {
-    "namespaces": 0,
-    "workloads": 0,
-    "podsRunning": 0
+    "namespaces": 14,
+    "nodesObserved": 1,
+    "workloads": 30,
+    "workloadsByKind": {
+      "deployments": 20,
+      "statefulSets": 4,
+      "daemonSets": 3,
+      "other": 3
+    },
+    "podsRunning": 33,
+    "pods": {
+      "total": 34,
+      "running": 33,
+      "ready": 33,
+      "pending": 0,
+      "succeeded": 1,
+      "failed": 0
+    }
   },
   "tls": {
-    "certificates": 0,
-    "daysToNextRenewal": null
+    "certificates": 2,
+    "ready": 2,
+    "notReady": 0,
+    "expiringWithin30Days": 0,
+    "daysToNextRenewal": 294
   },
   "services": ["ArgoCD", "Traefik", "cert-manager", "Infisical"]
 }
 ```
 
 Nomes descobertos no cluster nunca são serializados. A lista `services` é fixa
-no código. “Workloads” é a quantidade de controladores distintos inferida a
-partir dos Pods; isso evita conceder leitura adicional sobre Deployments,
-StatefulSets ou DaemonSets.
+no código. O contrato v2 é aditivo: `podsRunning` e `services` preservam o
+formato da primeira versão. `validUntil` explicita a janela de três horas usada
+para detectar dados desatualizados, e `status` resume apenas saúde GitOps e TLS.
+
+“Workloads” e sua distribuição por tipo são inferidos dos controladores dos
+Pods. `nodesObserved` conta nomes de nós distintos vistos em Pods ativos, mas
+nenhum nome é publicado. Essas inferências evitam conceder leitura adicional
+sobre Nodes, Deployments, StatefulSets ou DaemonSets.
 
 Antes do upload, o documento completo passa por duas barreiras:
 
@@ -131,7 +160,8 @@ A configuração do R2 e o checklist de publicação estão em
 
 ## Consumo
 
-O frontend consulta `https://api.renara.dev/snapshot.json`. Ele deve comparar
-`generatedAt` com o relógio atual e sinalizar explicitamente o dado como
-desatualizado quando a idade ultrapassar três horas. Essa indicação é apenas de
-apresentação: toda curadoria já ocorreu antes do upload.
+O frontend consulta `https://api.renara.dev/snapshot.json`. Ele deve sinalizar o
+dado como desatualizado quando o relógio atual ultrapassar `validUntil`. Clientes
+da primeira versão ainda podem calcular três horas a partir de `generatedAt`.
+Essa indicação é apenas de apresentação: toda curadoria já ocorreu antes do
+upload.
