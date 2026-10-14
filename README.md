@@ -1,19 +1,43 @@
 # Homelab Public API
 
-Publicação segura de um snapshot curado de um cluster Kubernetes para uso em
-portfólio. O produtor roda dentro do cluster, calcula apenas indicadores
-agregados e envia um único arquivo JSON para um bucket Cloudflare R2.
+[Leia em português](README.pt-BR.md) · [Case study](https://www.renara.dev/en/cases/homelab-api)
 
-O projeto não abre portas, não cria túneis e não expõe a API do Kubernetes. O
-fluxo de rede é exclusivamente de saída:
+Publishes a curated snapshot of a home Kubernetes cluster so a portfolio can
+show real, live data without giving anyone a path into the cluster. A producer
+runs inside the cluster, computes aggregate indicators only, and uploads a
+single JSON file to a Cloudflare R2 bucket.
 
-```text
-Kubernetes CronJob -> Cloudflare R2 -> navegador
+The project opens no ports, creates no tunnels, and never exposes the
+Kubernetes API. Network traffic is outbound only:
+
+```mermaid
+flowchart LR
+  subgraph cluster [Home cluster]
+    job[CronJob in Go] --> gate1[Exact schema validation]
+    gate1 --> gate2[Forbidden-pattern scan]
+  end
+  gate2 -- "outbound HTTPS, SigV4-signed" --> r2[(Cloudflare R2)]
+  r2 --> site[Portfolio in the browser]
 ```
 
-## Dados publicados
+## Highlights
 
-O documento tem um contrato fechado:
+- **Outbound only.** Nothing on the internet can reach the cluster; the job
+  pushes a file and exits.
+- **Least privilege by inference.** Workload counts are inferred from Pod
+  owners instead of reading Deployments, StatefulSets, DaemonSets, or Nodes, so
+  the RBAC role stays as narrow as possible.
+- **Two gates before every upload.** A closed schema check and a scan for
+  private addresses, internal names, and software versions. Any failure aborts
+  the job and keeps the last good snapshot online.
+- **Zero dependencies.** Go standard library only, including a hand-written
+  AWS SigV4 signer for R2. The image is distroless and runs as non-root.
+- **CI on GitHub-hosted runners** with actions pinned by SHA: content scan,
+  `gofmt`, `go vet`, tests, kustomize render, and image build.
+
+## Published data
+
+The document follows a closed contract:
 
 ```json
 {
@@ -61,39 +85,39 @@ O documento tem um contrato fechado:
 }
 ```
 
-Nomes descobertos no cluster nunca são serializados. A lista `services` é fixa
-no código. O contrato v2 é aditivo: `podsRunning` e `services` preservam o
-formato da primeira versão. `validUntil` explicita a janela de três horas usada
-para detectar dados desatualizados, e `status` resume apenas saúde GitOps e TLS.
+Names discovered in the cluster are never serialized. The `services` list is
+fixed in code. Contract v2 is additive: `podsRunning` and `services` keep the
+first version's shape. `validUntil` makes the three-hour staleness window
+explicit, and `status` only summarizes GitOps and TLS health.
 
-“Workloads” e sua distribuição por tipo são inferidos dos controladores dos
-Pods. `nodesObserved` conta nomes de nós distintos vistos em Pods ativos, mas
-nenhum nome é publicado. Essas inferências evitam conceder leitura adicional
-sobre Nodes, Deployments, StatefulSets ou DaemonSets.
+"Workloads" and their breakdown by kind are inferred from Pod controllers.
+`nodesObserved` counts distinct node names seen on active Pods, but no name is
+ever published. These inferences avoid granting extra read access to Nodes,
+Deployments, StatefulSets, or DaemonSets.
 
-Antes do upload, o documento completo passa por duas barreiras:
+Before upload, the whole document goes through two gates:
 
-1. validação exata de campos, tipos, relações entre contadores e lista de
-   serviços;
-2. busca por padrões proibidos, incluindo endereços privados, nomes internos e
-   versões de software.
+1. exact validation of fields, types, relationships between counters, and the
+   services list;
+2. a search for forbidden patterns, including private addresses, internal
+   names, and software versions.
 
-Qualquer falha termina o Job antes do envio e preserva o último snapshot válido
-no bucket.
+Any failure ends the Job before sending and keeps the last valid snapshot in the
+bucket.
 
-## Estrutura
+## Layout
 
 ```text
-cmd/snapshot/           ponto de entrada do produtor
-internal/               cliente Kubernetes, sanitizador e cliente R2
-k8s/base/               RBAC mínimo, CronJob e integração com Infisical
-docs/decisions/         decisões e limites de segurança
-tests/                  contrato e invariantes automatizados
+cmd/snapshot/           producer entry point
+internal/               Kubernetes client, sanitizer, and R2 client
+k8s/base/               minimal RBAC, CronJob, and Infisical integration
+docs/decisions/         security decisions and boundaries
+tests/                  automated contract and invariants
 ```
 
-## Validação local
+## Local validation
 
-O produtor é escrito em Go e usa apenas a biblioteca padrão:
+The producer is written in Go and uses only the standard library:
 
 ```bash
 make fmt
@@ -103,15 +127,15 @@ kubectl kustomize k8s/base >/tmp/homelab-snapshot.yaml
 docker build -t homelab-snapshot:test .
 ```
 
-O [`.editorconfig`](.editorconfig) padroniza UTF-8, LF, newline final e
-indentação entre Go, Makefile, YAML, JSON, Markdown e shell. Para Go, `gofmt` é
-o formatador canônico e `go vet` faz a análise estática; ambos são verificados
-pela CI.
+The [`.editorconfig`](.editorconfig) standardizes UTF-8, LF, final newline, and
+indentation across Go, Makefile, YAML, JSON, Markdown, and shell. For Go,
+`gofmt` is the canonical formatter and `go vet` does static analysis; CI checks
+both.
 
-## API local para desenvolvimento
+## Local API for development
 
-O servidor local usa somente dados fictícios, gera um timestamp atual a cada
-requisição e aceita conexões apenas da própria máquina:
+The local server uses fictional data only, generates a fresh timestamp on every
+request, and accepts connections from the local machine only:
 
 ```bash
 make dev
@@ -119,49 +143,55 @@ make dev
 
 Endpoints:
 
-- `http://127.0.0.1:8080/snapshot.json` — contrato usado pelo frontend;
-- `http://127.0.0.1:8080/healthz` — verificação simples de disponibilidade.
+- `http://127.0.0.1:8080/snapshot.json`: the contract the frontend consumes;
+- `http://127.0.0.1:8080/healthz`: a simple availability check.
 
-Por padrão, o CORS permite `http://localhost:5173`. Para usar outra origem
-local:
+By default, CORS allows `http://localhost:5173`. To use another local origin:
 
 ```bash
 go run ./cmd/devserver -cors-origin http://localhost:4200
 ```
 
-Esse servidor não acessa Kubernetes, Infisical ou Cloudflare R2 e não faz parte
-da imagem executada pelo CronJob.
+This server never touches Kubernetes, Infisical, or Cloudflare R2 and is not
+part of the image the CronJob runs.
 
-O workflow de CI usa exclusivamente runners hospedados pelo GitHub. Em pushes
-na branch `main`, ele também publica a imagem no GitHub Container Registry.
+The CI workflow uses GitHub-hosted runners only. On pushes to `main`, it also
+publishes the image to the GitHub Container Registry.
 
-## Implantação
+## Deployment
 
-Os manifests públicos são uma base sanitizada, não um manifesto pronto para ser
-aplicado sem revisão. Em um overlay privado:
+The public manifests are a sanitized base, not something to apply without
+review. In a private overlay:
 
-1. substitua `replace-with-account-id` e `replace-with-bucket-name` no CronJob;
-2. substitua o endpoint, projeto, ambiente e caminho de exemplo no
+1. replace `replace-with-account-id` and `replace-with-bucket-name` in the
+   CronJob;
+2. replace the example endpoint, project, environment, and path in the
    `InfisicalSecret`;
-3. crie `infisical-operator-credentials` no namespace `portfolio` pelo processo
-   privado de bootstrap do operator;
-4. disponibilize `R2_ACCESS_KEY_ID` e `R2_SECRET_ACCESS_KEY` no caminho do
-   Infisical configurado;
-5. torne o pacote do GHCR público ou configure um `imagePullSecret` no overlay;
-6. fixe a imagem por digest após o primeiro build;
-7. renderize e revise o overlay antes de adicioná-lo ao GitOps.
+3. create `infisical-operator-credentials` in the `portfolio` namespace through
+   the operator's private bootstrap process;
+4. make `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` available at the
+   configured Infisical path;
+5. make the GHCR package public or configure an `imagePullSecret` in the
+   overlay;
+6. pin the image by digest after the first build;
+7. render and review the overlay before adding it to GitOps.
 
-O Secret de credenciais do operator precisa existir no mesmo namespace do
-`InfisicalSecret`. Nenhum valor de credencial deve entrar neste repositório.
+The operator credentials Secret must live in the same namespace as the
+`InfisicalSecret`. No credential value should ever enter this repository.
 
-A configuração do R2 e o checklist de publicação estão em
-[docs/cloudflare.md](docs/cloudflare.md). As decisões de segurança estão em
-[docs/decisions/0001-outbound-snapshot.md](docs/decisions/0001-outbound-snapshot.md).
+R2 setup and the publishing checklist are in
+[docs/cloudflare.md](docs/cloudflare.md). The security decisions are in
+[docs/decisions/0001-outbound-snapshot.md](docs/decisions/0001-outbound-snapshot.md)
+and
+[docs/decisions/0002-curation-and-least-privilege.md](docs/decisions/0002-curation-and-least-privilege.md).
 
-## Consumo
+## Consumption
 
-O frontend consulta `https://api.renara.dev/snapshot.json`. Ele deve sinalizar o
-dado como desatualizado quando o relógio atual ultrapassar `validUntil`. Clientes
-da primeira versão ainda podem calcular três horas a partir de `generatedAt`.
-Essa indicação é apenas de apresentação: toda curadoria já ocorreu antes do
-upload.
+The frontend fetches `https://api.renara.dev/snapshot.json`. It should flag the
+data as stale once the current time passes `validUntil`. First-version clients
+can still compute three hours from `generatedAt`. That flag is presentation
+only: all curation already happened before upload.
+
+## License
+
+[MIT](LICENSE)
